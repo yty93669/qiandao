@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>二维码时间更新工具</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .input-section, .output-section {
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .input-methods {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+        }
+        .method {
+            flex: 1;
+        }
+        textarea {
+            width: 100%;
+            height: 100px;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            resize: vertical;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #fileInput {
+            margin-bottom: 10px;
+        }
+        #qrcode {
+            margin-top: 20px;
+            text-align: center;
+        }
+        #qrcode img {
+            max-width: 100%;
+            height: auto;
+        }
+        .time-info {
+            font-style: italic;
+            color: #666;
+            text-align: center;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>二维码时间更新工具</h1>
+    <div class="container">
+        <div class="input-section">
+            <h2>输入</h2>
+            <div class="input-methods">
+                <div class="method">
+                    <h3>上传二维码图片</h3>
+                    <input type="file" id="fileInput" accept="image/*">
+                    <button id="decodeBtn">解码二维码</button>
+                </div>
+                <div class="method">
+                    <h3>或手动输入文本</h3>
+                    <textarea id="textInput" placeholder="请输入文本，例如：checkwork|id=1234567890123456789&siteId=123456789123456789&createTime=2025-05-22T08:06:41.607&classLessonId=1234567891234567890"></textarea>
+                </div>
+            </div>
+            <button id="generateBtn">生成更新后的二维码</button>
+        </div>
+        
+        <div class="output-section">
+            <h2>输出</h2>
+            <div id="originalText"></div>
+            <div id="updatedText"></div>
+            <div id="qrcode"></div>
+            <div class="time-info">二维码将每5秒自动更新时间并刷新</div>
+        </div>
+    </div>
+
+    <script>
+        // 获取DOM元素
+        const fileInput = document.getElementById('fileInput');
+        const decodeBtn = document.getElementById('decodeBtn');
+        const textInput = document.getElementById('textInput');
+        const generateBtn = document.getElementById('generateBtn');
+        const originalTextDiv = document.getElementById('originalText');
+        const updatedTextDiv = document.getElementById('updatedText');
+        const qrcodeDiv = document.getElementById('qrcode');
+        
+        let currentText = '';
+        let updateInterval = null;
+        
+        // 解码二维码图片
+        decodeBtn.addEventListener('click', async () => {
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('请先选择二维码图片');
+                return;
+            }
+            
+            try {
+                const imageData = await loadImageData(file);
+                const code = jsQR(imageData.data, imageData.width, imageData.height);
+                
+                if (code) {
+                    currentText = code.data;
+                    textInput.value = currentText;
+                    displayOriginalText(currentText);
+                    updateTextAndQRCode();
+                } else {
+                    alert('无法解码二维码，请尝试其他图片');
+                }
+            } catch (error) {
+                console.error('解码错误:', error);
+                alert('解码过程中发生错误');
+            }
+        });
+        
+        // 加载图片数据
+        function loadImageData(file) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                const url = URL.createObjectURL(file);
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    const imageData = ctx.getImageData(0, 0, img.width, img.height);
+                    URL.revokeObjectURL(url);
+                    resolve(imageData);
+                };
+                img.onerror = reject;
+                img.src = url;
+            });
+        }
+        
+        // 生成按钮点击事件
+        generateBtn.addEventListener('click', () => {
+            currentText = textInput.value.trim();
+            if (!currentText) {
+                alert('请输入文本或上传二维码图片');
+                return;
+            }
+            
+            displayOriginalText(currentText);
+            updateTextAndQRCode();
+        });
+        
+        // 显示原始文本
+        function displayOriginalText(text) {
+            originalTextDiv.innerHTML = `<h3>原始文本：</h3><p>${escapeHtml(text)}</p>`;
+        }
+        
+        // 显示更新后的文本
+        function displayUpdatedText(text) {
+            updatedTextDiv.innerHTML = `<h3>更新后的文本：</h3><p>${escapeHtml(text)}</p>`;
+        }
+        
+        // 更新文本中的时间并生成二维码
+        function updateTextAndQRCode() {
+            if (!currentText) return;
+            
+            // 获取当前时间并格式化为所需格式
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            const milliseconds = String(now.getMilliseconds()).padStart(3, '0');
+            
+            const newTime = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}`;
+            
+            // 使用正则表达式替换时间部分
+            const updatedText = currentText.replace(
+                /(createTime=)(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3})/,
+                `$1${newTime}`
+            );
+            
+            displayUpdatedText(updatedText);
+            generateQRCode(updatedText);
+            
+            // 设置定时器，每5秒更新一次
+            if (updateInterval) {
+                clearInterval(updateInterval);
+            }
+            updateInterval = setInterval(() => {
+                updateTextAndQRCode();
+            }, 5000);
+        }
+        
+        // 生成二维码 - 修正后的版本
+        function generateQRCode(text) {
+            qrcodeDiv.innerHTML = '';
+            QRCode.toDataURL(text, { width: 200 }, (error, url) => {
+                if (error) {
+                    console.error('生成二维码错误:', error);
+                    qrcodeDiv.innerHTML = '<p>生成二维码时出错: ' + error.message + '</p>';
+                } else {
+                    const img = document.createElement('img');
+                    img.src = url;
+                    img.alt = "生成的二维码";
+                    qrcodeDiv.appendChild(img);
+                }
+            });
+        }
+        
+        // HTML转义，防止XSS
+        function escapeHtml(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>
